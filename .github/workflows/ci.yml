@@ -1,0 +1,178 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Stage 1: Run integration tests
+  # ──────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cicd_db_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Push database schema
+        run: npx prisma db push
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cicd_db_test?schema=public
+
+      - name: Run Integration Tests
+        run: npm test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/cicd_db_test?schema=public
+          NODE_ENV: test
+
+  # ──────────────────────────────────────────────
+  # Stage 2: Build Docker image → export as tarball
+  # ──────────────────────────────────────────────
+  build-docker:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image and export to tarball
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ${{ github.repository }}:${{ github.sha }}
+          # Export to tar so the scan & push jobs reuse the exact same image
+          outputs: type=docker,dest=/tmp/image.tar
+
+      - name: Upload image tarball as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  # ──────────────────────────────────────────────
+  # Stage 3: Trivy security scan
+  #   - Fails the pipeline on CRITICAL or HIGH CVEs
+  #   - Uploads SARIF report to GitHub Security tab
+  # ──────────────────────────────────────────────
+  scan:
+    needs: build-docker
+    runs-on: ubuntu-latest
+
+    permissions:
+      security-events: write  # Required to upload SARIF to GitHub Security tab
+
+    steps:
+      - name: Download image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load --input /tmp/image.tar
+
+      # Run 1: Table output in the console — fails pipeline on HIGH/CRITICAL
+      - name: Trivy scan (table output)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ github.repository }}:${{ github.sha }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      # Run 2: SARIF report — always runs even if the table scan above failed,
+      #         so the Security tab always gets an up-to-date report
+      - name: Trivy scan (SARIF report)
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          image-ref: ${{ github.repository }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ──────────────────────────────────────────────
+  # Stage 4: Push image to Docker Hub
+  #   - Only runs on push to main/master (not on PRs)
+  #   - Requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN secrets
+  # ──────────────────────────────────────────────
+  push:
+    needs: scan
+    runs-on: ubuntu-latest
+    # Skip this job on pull requests — only push on direct commits to main/master
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Download image tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load --input /tmp/image.tar
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag image for Docker Hub
+        run: |
+          docker tag ${{ github.repository }}:${{ github.sha }} \
+            ${{ secrets.DOCKERHUB_USERNAME }}/cicd_1:latest
+          docker tag ${{ github.repository }}:${{ github.sha }} \
+            ${{ secrets.DOCKERHUB_USERNAME }}/cicd_1:${{ github.sha }}
+
+      - name: Push image to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/cicd_1:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/cicd_1:${{ github.sha }}

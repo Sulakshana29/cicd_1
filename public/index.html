@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevOps Task Manager</title>
+  <meta name="description" content="A portfolio CI/CD project — Task Manager API with GitHub Actions, Docker, and PostgreSQL." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0a0f1e;
+      --surface:     #111827;
+      --surface-2:   #1a2235;
+      --border:      rgba(255,255,255,0.08);
+      --accent:      #6366f1;
+      --accent-soft: rgba(99,102,241,0.15);
+      --accent-glow: rgba(99,102,241,0.35);
+      --green:       #10b981;
+      --red:         #f43f5e;
+      --yellow:      #f59e0b;
+      --text:        #e2e8f0;
+      --muted:       #64748b;
+      --radius:      14px;
+      --shadow:      0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99,102,241,0.15), transparent),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(16,185,129,0.05), transparent);
+    }
+
+    /* ── Layout ───────────────────────────────────────────── */
+    .shell {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 20px 80px;
+    }
+
+    /* ── Header ───────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 4px 20px var(--accent-glow);
+    }
+
+    .logo-text h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-text span {
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* ── Status pill ──────────────────────────────────────── */
+    #health-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: all 0.3s;
+      cursor: default;
+    }
+
+    #health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+
+    #health-badge.ok  { border-color: rgba(16,185,129,0.4); color: var(--green); }
+    #health-badge.ok  #health-dot { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+    #health-badge.err { border-color: rgba(244,63,94,0.4);  color: var(--red); }
+    #health-badge.err #health-dot { background: var(--red); }
+
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: 0.4; }
+    }
+
+    /* ── Stats row ────────────────────────────────────────── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .stat-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+
+    .stat-num {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stat-label { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+    /* ── Create form ──────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .card h2 {
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    input[type="text"], textarea {
+      flex: 1;
+      min-width: 0;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.9rem;
+      padding: 11px 15px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    textarea { width: 100%; resize: vertical; min-height: 68px; margin-top: 10px; }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 11px 22px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: #fff;
+      box-shadow: 0 4px 14px var(--accent-glow);
+    }
+
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px var(--accent-glow); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* ── Task list ────────────────────────────────────────── */
+    #task-list { display: flex; flex-direction: column; gap: 12px; }
+
+    .task-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      transition: transform 0.2s, border-color 0.2s, opacity 0.3s;
+      animation: fadeSlide 0.35s ease both;
+    }
+
+    @keyframes fadeSlide {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .task-item:hover { border-color: rgba(99,102,241,0.3); transform: translateY(-1px); }
+    .task-item.completed { opacity: 0.55; }
+    .task-item.removing  { opacity: 0; transform: translateX(30px); }
+
+    /* custom checkbox */
+    .task-check {
+      flex-shrink: 0;
+      margin-top: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 6px;
+      border: 2px solid var(--border);
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      font-size: 12px;
+    }
+
+    .task-check:hover { border-color: var(--accent); }
+    .task-check.checked { background: var(--green); border-color: var(--green); color: #fff; }
+
+    .task-body { flex: 1; min-width: 0; }
+
+    .task-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      margin-bottom: 4px;
+      word-break: break-word;
+      transition: text-decoration 0.2s;
+    }
+
+    .task-item.completed .task-title { text-decoration: line-through; }
+
+    .task-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      word-break: break-word;
+    }
+
+    .task-meta {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .task-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+    .btn-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: all 0.2s;
+    }
+
+    .btn-icon:hover { transform: scale(1.1); }
+    .btn-delete:hover { background: rgba(244,63,94,0.15); border-color: var(--red); color: var(--red); }
+
+    /* ── Empty state ──────────────────────────────────────── */
+    .empty {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+      animation: fadeSlide 0.35s ease both;
+    }
+
+    .empty .empty-icon { font-size: 3rem; margin-bottom: 14px; opacity: 0.4; }
+    .empty p { font-size: 0.9rem; }
+
+    /* ── Toast ────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 9999;
+    }
+
+    .toast {
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: var(--shadow);
+      animation: toastIn 0.3s ease both;
+      max-width: 300px;
+    }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .toast-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.4); color: var(--green); }
+    .toast-error   { background: rgba(244,63,94,0.15);  border: 1px solid rgba(244,63,94,0.4);  color: var(--red); }
+
+    /* ── Responsive ───────────────────────────────────────── */
+    @media (max-width: 500px) {
+      .stats { grid-template-columns: 1fr 1fr; }
+      .form-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">✅</div>
+      <div class="logo-text">
+        <h1>Task Manager</h1>
+        <span>DevOps Portfolio · CI/CD + Docker + PostgreSQL</span>
+      </div>
+    </div>
+    <div id="health-badge">
+      <div id="health-dot"></div>
+      <span id="health-text">Checking…</span>
+    </div>
+  </header>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-num" id="stat-total">—</div>
+      <div class="stat-label">Total Tasks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat-done">—</div>
+      <div class="stat-label">Completed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat-open">—</div>
+      <div class="stat-label">Remaining</div>
+    </div>
+  </div>
+
+  <!-- Create form -->
+  <div class="card">
+    <h2>➕ New Task</h2>
+    <div class="form-row">
+      <input type="text" id="input-title" placeholder="Task title…" maxlength="120" />
+      <button class="btn-primary" id="btn-add" onclick="createTask()">Add Task</button>
+    </div>
+    <textarea id="input-desc" placeholder="Description (optional)…" rows="2"></textarea>
+  </div>
+
+  <!-- Task list -->
+  <div class="card" style="padding-bottom: 12px;">
+    <h2>📋 Tasks</h2>
+    <div id="task-list"></div>
+  </div>
+
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+  const API = '/tasks';
+
+  // ── Utilities ──────────────────────────────────────────────────
+  function toast(msg, type = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  function fmt(iso) {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  // ── Health check ───────────────────────────────────────────────
+  async function checkHealth() {
+    const badge = document.getElementById('health-badge');
+    const dot   = document.getElementById('health-dot');
+    const txt   = document.getElementById('health-text');
+    try {
+      const r = await fetch('/health');
+      const data = await r.json();
+      if (data.status === 'OK') {
+        badge.className = 'ok';
+        txt.textContent = 'DB Connected';
+      } else {
+        throw new Error('DB error');
+      }
+    } catch {
+      badge.className = 'err';
+      txt.textContent = 'DB Disconnected';
+    }
+  }
+
+  // ── Render tasks ───────────────────────────────────────────────
+  function render(tasks) {
+    const list = document.getElementById('task-list');
+    document.getElementById('stat-total').textContent = tasks.length;
+    const done = tasks.filter(t => t.completed).length;
+    document.getElementById('stat-done').textContent = done;
+    document.getElementById('stat-open').textContent = tasks.length - done;
+
+    if (tasks.length === 0) {
+      list.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">🗒️</div>
+          <p>No tasks yet. Add one above!</p>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = tasks.map(t => `
+      <div class="task-item ${t.completed ? 'completed' : ''}" id="task-${t.id}">
+        <div class="task-check ${t.completed ? 'checked' : ''}"
+             onclick="toggleTask(${t.id}, ${!t.completed})"
+             title="${t.completed ? 'Mark incomplete' : 'Mark complete'}">
+          ${t.completed ? '✓' : ''}
+        </div>
+        <div class="task-body">
+          <div class="task-title">${escHtml(t.title)}</div>
+          ${t.description ? `<div class="task-desc">${escHtml(t.description)}</div>` : ''}
+          <div class="task-meta">Created ${fmt(t.createdAt)}</div>
+        </div>
+        <div class="task-actions">
+          <button class="btn-icon btn-delete" onclick="deleteTask(${t.id})" title="Delete">🗑</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Fetch tasks ────────────────────────────────────────────────
+  async function fetchTasks() {
+    try {
+      const r = await fetch(API);
+      if (!r.ok) throw new Error('fetch failed');
+      render(await r.json());
+    } catch {
+      toast('Could not load tasks. Is the database connected?', 'error');
+    }
+  }
+
+  // ── Create task ────────────────────────────────────────────────
+  async function createTask() {
+    const title = document.getElementById('input-title').value.trim();
+    const description = document.getElementById('input-desc').value.trim();
+    if (!title) {
+      toast('Title is required', 'error');
+      document.getElementById('input-title').focus();
+      return;
+    }
+    const btn = document.getElementById('btn-add');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    try {
+      const r = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description }),
+      });
+      if (!r.ok) throw new Error((await r.json()).error);
+      document.getElementById('input-title').value = '';
+      document.getElementById('input-desc').value = '';
+      toast('Task created ✓');
+      await fetchTasks();
+    } catch (e) {
+      toast(e.message || 'Failed to create task', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Add Task';
+    }
+  }
+
+  // ── Toggle complete ────────────────────────────────────────────
+  async function toggleTask(id, completed) {
+    try {
+      const r = await fetch(`${API}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed }),
+      });
+      if (!r.ok) throw new Error('update failed');
+      toast(completed ? 'Task completed 🎉' : 'Marked incomplete');
+      await fetchTasks();
+    } catch {
+      toast('Failed to update task', 'error');
+    }
+  }
+
+  // ── Delete task ────────────────────────────────────────────────
+  async function deleteTask(id) {
+    const el = document.getElementById(`task-${id}`);
+    el.classList.add('removing');
+    await new Promise(r => setTimeout(r, 280));
+    try {
+      const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('delete failed');
+      toast('Task deleted');
+      await fetchTasks();
+    } catch {
+      el.classList.remove('removing');
+      toast('Failed to delete task', 'error');
+    }
+  }
+
+  // ── Enter key shortcut ────────────────────────────────────────
+  document.getElementById('input-title').addEventListener('keydown', e => {
+    if (e.key === 'Enter') createTask();
+  });
+
+  // ── Init ──────────────────────────────────────────────────────
+  checkHealth();
+  fetchTasks();
+  setInterval(checkHealth, 30000);
+</script>
+</body>
+</html>
