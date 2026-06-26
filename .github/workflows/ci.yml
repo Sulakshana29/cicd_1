@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Allow GITHUB_TOKEN to upload SARIF results to the Security tab
+permissions:
+  contents: read
+  security-events: write
+
 jobs:
   # ──────────────────────────────────────────────
   # Stage 1: Run integration tests
