@@ -69,13 +69,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Docker tags cannot contain uppercase — lowercase the repo name
+      - name: Compute lowercase image name
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Build Docker image and export to tarball
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: false
-          tags: ${{ github.repository }}:${{ github.sha }}
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           # Export to tar so the scan & push jobs reuse the exact same image
           outputs: type=docker,dest=/tmp/image.tar
 
@@ -108,11 +112,15 @@ jobs:
       - name: Load Docker image
         run: docker load --input /tmp/image.tar
 
+      # Docker tags cannot contain uppercase — lowercase the repo name
+      - name: Compute lowercase image name
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       # Run 1: Table output in the console — fails pipeline on HIGH/CRITICAL
       - name: Trivy scan (table output)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ github.repository }}:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
@@ -125,7 +133,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         if: always()
         with:
-          image-ref: ${{ github.repository }}:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           ignore-unfixed: true
@@ -159,6 +167,10 @@ jobs:
       - name: Load Docker image
         run: docker load --input /tmp/image.tar
 
+      # Docker tags cannot contain uppercase — lowercase the repo name
+      - name: Compute lowercase image name
+        run: echo "IMAGE_NAME=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -167,9 +179,9 @@ jobs:
 
       - name: Tag image for Docker Hub
         run: |
-          docker tag ${{ github.repository }}:${{ github.sha }} \
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} \
             ${{ secrets.DOCKERHUB_USERNAME }}/cicd_1:latest
-          docker tag ${{ github.repository }}:${{ github.sha }} \
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} \
             ${{ secrets.DOCKERHUB_USERNAME }}/cicd_1:${{ github.sha }}
 
       - name: Push image to Docker Hub
